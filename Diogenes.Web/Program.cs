@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 namespace Diogenes.Web
 {
     public class Program
