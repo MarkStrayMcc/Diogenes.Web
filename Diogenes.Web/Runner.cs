@@ -21,7 +21,7 @@ public class Runner : IRunner
         for (var i = 0; i < 10; i++)
         {
             outputs.Add(i);
-            logger.LogInformation("Runner output {Output}", i);
+            logger.LogInformation("Runner output ---- {Output}", i);
         }
 
         return outputs;
