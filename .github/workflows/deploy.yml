@@ -1,4 +1,4 @@
-name: Deploy to Elastic Beanstalk
+name: Deploy to ECS
 
 on:
   push:
@@ -7,6 +7,15 @@ on:
 permissions:
   id-token: write
   contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  AWS_ACCOUNT_ID: "707714592196"
+  ECR_REPOSITORY: diogenes-web
+  ECS_CLUSTER: diogenes-web-dev
+  ECS_SERVICE: diogenes-web-service
+  ECS_TASK_DEFINITION: diogenes-web-task
+  CONTAINER_NAME: diogenes-web
 
 jobs:
   deploy:
@@ -17,38 +26,48 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
-
-    - name: Publish
-      run: dotnet publish Diogenes.Web/Diogenes.Web.csproj --configuration Release --output publish
-
-    - name: Create deployment package
-      run: |
-        cd publish
-        zip -r ../deploy.zip .
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: arn:aws:iam::707714592196:role/GitHubActions-ElasticBeanstalk-Deploy
-        aws-region: eu-west-2
+        aws-region: ${{ env.AWS_REGION }}
 
-    - name: Upload package to S3
-      run: |
-        aws s3 cp deploy.zip s3://elasticbeanstalk-eu-west-2-707714592196/diogenes-web/deploy-${{ github.sha }}.zip
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Create Elastic Beanstalk application version
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
       run: |
-        aws elasticbeanstalk create-application-version \
-          --application-name diogenes-web \
-          --version-label deploy-${{ github.sha }} \
-          --source-bundle S3Bucket=elasticbeanstalk-eu-west-2-707714592196,S3Key=diogenes-web/deploy-${{ github.sha }}.zip
+        IMAGE_URI=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-    - name: Deploy to dev
+        docker build \
+          -f Diogenes.Web/Dockerfile \
+          -t $IMAGE_URI \
+          .
+
+        docker push $IMAGE_URI
+
+        echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+    - name: Download current ECS task definition
       run: |
-        aws elasticbeanstalk update-environment \
-          --environment-name diogenes-web-dev \
-          --version-label deploy-${{ github.sha }}
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --query taskDefinition \
+          > task-definition.json
+
+    - name: Render new ECS task definition
+      id: render-task-definition
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+      with:
+        task-definition: ${{ steps.render-task-definition.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
