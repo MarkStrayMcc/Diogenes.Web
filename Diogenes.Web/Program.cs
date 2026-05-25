@@ -8,6 +8,8 @@ namespace Diogenes.Web
 
             // Add services to the container.
             builder.Services.AddRazorPages();
+            builder.Services.AddSingleton<IRunner, Runner>();
+            builder.Services.AddHostedService<RunnerBackgroundService>();
 
             var app = builder.Build();
 
