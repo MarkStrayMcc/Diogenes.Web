@@ -1,0 +1,66 @@
+name: Promote to UAT
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to promote, usually a Git SHA"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  AWS_ACCOUNT_ID: "707714592196"
+  ECR_REPOSITORY: diogenes-web
+  ECS_CLUSTER: diogenes-web-uat
+  ECS_SERVICE: diogenes-web-service
+  ECS_TASK_DEFINITION: diogenes-web-task-uat
+  CONTAINER_NAME: diogenes-web
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: uat
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::707714592196:role/GitHubActions-ElasticBeanstalk-Deploy
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Set image URI
+      id: image
+      run: |
+        IMAGE_URI=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+        echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+    - name: Download current UAT task definition
+      run: |
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --query taskDefinition \
+          > task-definition.json
+
+    - name: Render new UAT task definition
+      id: render-task-definition
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.image.outputs.image }}
+
+    - name: Deploy to UAT
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+      with:
+        task-definition: ${{ steps.render-task-definition.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
