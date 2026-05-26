@@ -17,8 +17,8 @@ env:
   AWS_ACCOUNT_ID: "707714592196"
   ECR_REPOSITORY: diogenes-web
   ECS_CLUSTER: diogenes-web-uat
-  ECS_SERVICE: diogenes-web-service
-  ECS_TASK_DEFINITION: diogenes-web-task-uat
+  ECS_SERVICE: diogenes-web-uat-service
+  ECS_TASK_DEFINITION: diogenes-web-task
   CONTAINER_NAME: diogenes-web
 
 jobs:
